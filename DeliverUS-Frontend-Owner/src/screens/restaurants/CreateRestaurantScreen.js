@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { Image, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native'
+import { Image, Platform, Pressable, ScrollView, StyleSheet, View, Switch } from 'react-native'
 import * as ExpoImagePicker from 'expo-image-picker'
 import { MaterialCommunityIcons } from '@expo/vector-icons'
 import * as yup from 'yup'
@@ -18,6 +18,7 @@ export default function CreateRestaurantScreen ({ navigation }) {
   const [open, setOpen] = useState(false)
   const [restaurantCategories, setRestaurantCategories] = useState([])
   const [backendErrors, setBackendErrors] = useState()
+  const [isPinned, setIsPinned] = useState(false) // Por defecto no está pineado
 
   const initialRestaurantValues = { name: null, description: null, address: null, postalCode: null, url: null, shippingCosts: null, email: null, phone: null, restaurantCategoryId: null }
   const validationSchema = yup.object().shape({
@@ -106,8 +107,12 @@ export default function CreateRestaurantScreen ({ navigation }) {
 
   const createRestaurant = async (values) => {
     setBackendErrors([])
+    const restaurantToCreate = {
+      ...values,
+      ...(isPinned ? { pinned: true } : { pinned: false })
+    }
     try {
-      const createdRestaurant = await create(values)
+      const createdRestaurant = await create(restaurantToCreate)
       showMessage({
         message: `Restaurant ${createdRestaurant.name} succesfully created`,
         type: 'success',
@@ -120,6 +125,7 @@ export default function CreateRestaurantScreen ({ navigation }) {
       setBackendErrors(error.errors)
     }
   }
+
   return (
     <Formik
       validationSchema={validationSchema}
@@ -203,6 +209,16 @@ export default function CreateRestaurantScreen ({ navigation }) {
                 <TextRegular>Hero image: </TextRegular>
                 <Image style={styles.image} source={values.heroImage ? { uri: values.heroImage.assets[0].uri } : restaurantBackground} />
               </Pressable>
+              <View>
+                <TextRegular textStyle={styles.textPin}>Pin restaurant?</TextRegular>
+                <Switch
+                  value={isPinned} // Por defecto aparecerá el Switch deshabilitado
+                  onValueChange={setIsPinned} // Cuando cambiemos el estado del switch se pondrá en true
+                  // Con el onValueChange lo que hacemos es pasar isPinned de false a true y viceversa
+                  trackColor={{ false: '#ccc', true: '#00e676' }} // Color de la pista del Switch (la parte alargada)
+                  thumbColor={ isPinned ? '#fff' : '#eee'} // thumbColor es el color del círculo del Switch
+                />
+              </View>
 
               {backendErrors &&
                 backendErrors.map((error, index) => <TextError key={index}>{error.param}-{error.msg}</TextError>)
@@ -246,6 +262,12 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: 'white',
     textAlign: 'center',
+    marginLeft: 5
+  },
+  textPin: {
+    fontSize: 16,
+    color: 'black',
+    textAlign: 'left',
     marginLeft: 5
   },
   imagePicker: {

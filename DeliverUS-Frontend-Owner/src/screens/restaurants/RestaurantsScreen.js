@@ -2,7 +2,7 @@
 import React, { useContext, useEffect, useState } from 'react'
 import { StyleSheet, FlatList, Pressable, View } from 'react-native'
 
-import { getAll, remove } from '../../api/RestaurantEndpoints'
+import { getAll, remove, patchPinned } from '../../api/RestaurantEndpoints'
 import ImageCard from '../../components/ImageCard'
 import TextSemiBold from '../../components/TextSemibold'
 import TextRegular from '../../components/TextRegular'
@@ -13,10 +13,13 @@ import { showMessage } from 'react-native-flash-message'
 import DeleteModal from '../../components/DeleteModal'
 import restaurantLogo from '../../../assets/restaurantLogo.jpeg'
 import { API_BASE_URL } from '@env'
+import ConfirmationModal from '../../components/ConfirmationModal'
 
 export default function RestaurantsScreen ({ navigation, route }) {
   const [restaurants, setRestaurants] = useState([])
   const [restaurantToBeDeleted, setRestaurantToBeDeleted] = useState(null)
+  // Creamos un useState para la visualización del ConfirmationModal
+  const [restaurantToBePinned, setRestaurantToBePinned] = useState(null)
   const { loggedInUser } = useContext(AuthorizationContext)
 
   useEffect(() => {
@@ -40,7 +43,28 @@ export default function RestaurantsScreen ({ navigation, route }) {
         {item.averageServiceMinutes !== null &&
           <TextSemiBold>Avg. service time: <TextSemiBold textStyle={{ color: GlobalStyles.brandPrimary }}>{item.averageServiceMinutes} min.</TextSemiBold></TextSemiBold>
         }
+        <View style={{ marginBottom: 20, flexDirection: 'row' }}>
         <TextSemiBold>Shipping: <TextSemiBold textStyle={{ color: GlobalStyles.brandPrimary }}>{item.shippingCosts.toFixed(2)}€</TextSemiBold></TextSemiBold>
+        {/* Aquí introducimos el elemento de pineado */}
+        <Pressable
+            onPress={() => setRestaurantToBePinned(item)} // Al pasarle item de esta forma deja de ser distinto de null y se muestra el modal
+            style={({ pressed }) => [
+              {
+                backgroundColor: pressed
+                  ? GlobalStyles.brandBlueTap
+                  : 'white'
+              },
+              styles.buttonPinned
+              // styles.actionButton Vamos a quitarlo por ahora
+            ]}
+        >
+          <MaterialCommunityIcons
+              name={item.pinnedAt ? 'pin' : 'pin-outline'}
+              color={GlobalStyles.brandSecondaryTap}
+              size={24}
+          />
+        </Pressable>
+        </View>
         <View style={styles.actionButtonsContainer}>
           <Pressable
             onPress={() => navigation.navigate('EditRestaurantScreen', { id: item.id })
@@ -120,7 +144,19 @@ export default function RestaurantsScreen ({ navigation, route }) {
   const fetchRestaurants = async () => {
     try {
       const fetchedRestaurants = await getAll()
-      setRestaurants(fetchedRestaurants)
+      //  Ordenar por fecha de pineado (de más antigua a más reciente) ---> Cada vez que se entra en esta pantalla aparecerán ordenados
+      const sortedRestaurants = fetchedRestaurants.sort((a, b) => {
+        if (a.pinnedAt && b.pinnedAt) { // Solo si los dos están pineados se pueden ordenar
+          return new Date(a.pinnedAt) - new Date(b.pinnedAt)
+        } else if (a.pinnedAt) {
+          return -1
+        } else if (b.pinnedAt) {
+          return 1
+        } else {
+          return 0
+        }
+      })
+      setRestaurants(sortedRestaurants)
     } catch (error) {
       showMessage({
         message: `There was an error while retrieving restaurants. ${error} `,
@@ -153,7 +189,38 @@ export default function RestaurantsScreen ({ navigation, route }) {
       })
     }
   }
-
+  const pinnedRestaurant = async (item) => {
+    try {
+      const restaurantPinned = await patchPinned(item.id)
+      // Actualizamos la lista de restaurantes para poder hacer un renderizado
+      const restaurantsUpdated = restaurants.map(
+        r => r.id === restaurantPinned.id ? restaurantPinned : r
+      )
+      // Los ordenamos
+      const sortedRestaurants = restaurantsUpdated.sort((a, b) => {
+        if (a.pinnedAt && b.pinnedAt) { // Solo si los dos están pineados se pueden ordenar
+          return new Date(a.pinnedAt) - new Date(b.pinnedAt)
+        } else if (a.pinnedAt) {
+          return -1
+        } else if (b.pinnedAt) {
+          return 1
+        } else {
+          return 0
+        }
+      })
+      setRestaurantToBePinned(null)
+      setRestaurants(sortedRestaurants)
+    } catch (error) {
+      console.log(error)
+      setRestaurantToBePinned(null)
+      showMessage({
+        message: `Restaurant ${item.name} could not be pinned.`,
+        type: 'error',
+        style: GlobalStyles.flashStyle,
+        titleStyle: GlobalStyles.flashTextStyle
+      })
+    }
+  }
   return (
     <>
     <FlatList
@@ -171,6 +238,12 @@ export default function RestaurantsScreen ({ navigation, route }) {
         <TextRegular>The products of this restaurant will be deleted as well</TextRegular>
         <TextRegular>If the restaurant has orders, it cannot be deleted.</TextRegular>
     </DeleteModal>
+    <ConfirmationModal
+      isVisible={restaurantToBePinned !== null}
+      onCancel={() => setRestaurantToBePinned(null)} // Deja de hacerlo visible
+      onConfirm={() => pinnedRestaurant(restaurantToBePinned)} // Si se confirma llamamos a la función que pinea el restaurante (es como un update, un patch más bien)
+    />
+      {/* Aparentemente no hace falta ponerle texto como children, solo los dos botones y el título */}
     </>
   )
 }
@@ -213,5 +286,8 @@ const styles = StyleSheet.create({
   emptyList: {
     textAlign: 'center',
     padding: 50
+  },
+  buttonPinned: {
+    marginLeft: 'auto'
   }
 })
